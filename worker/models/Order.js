@@ -9,6 +9,7 @@ const orderSchema = new mongoose.Schema({
   quantity: { type: Number, required: true },
   remainingQuantity: { type: Number, required: true },
   status: { type: String, enum: ['pending', 'partial', 'filled', 'cancelled'], default: 'pending' },
-}, { timestamps: true });
+  reservedAmount: { type: Number, default: 0 },
+}, { timestamps: true, optimisticConcurrency: true });
 
 module.exports = mongoose.model('Order', orderSchema);

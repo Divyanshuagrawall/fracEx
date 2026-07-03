@@ -6,6 +6,11 @@ const assets = [
   { symbol: 'AAPL', name: 'Apple Inc.', currentPrice: 185 },
   { symbol: 'TSLA', name: 'Tesla Inc.', currentPrice: 250 },
   { symbol: 'GOOGL', name: 'Alphabet Inc.', currentPrice: 140 },
+  { symbol: 'MSFT', name: 'Microsoft Corporation', currentPrice: 420 },
+  { symbol: 'AMZN', name: 'Amazon.com Inc.', currentPrice: 178 },
+  { symbol: 'NVDA', name: 'NVIDIA Corporation', currentPrice: 875 },
+  { symbol: 'META', name: 'Meta Platforms Inc.', currentPrice: 480 },
+  { symbol: 'NFLX', name: 'Netflix Inc.', currentPrice: 620 },
 ];
 
 mongoose.connect(process.env.MONGO_URI).then(async () => {

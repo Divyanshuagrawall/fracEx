@@ -8,7 +8,6 @@ const placeOrder = async (req, res) => {
     const { assetSymbol, type, orderType, price, quantity } = req.body;
     const userId = req.userId;
 
-    // validate orderType and price
     if (orderType === 'limit' && !price) {
       return res.status(400).json({ message: 'Limit orders require a price' });
     }
@@ -17,12 +16,49 @@ const placeOrder = async (req, res) => {
     if (!asset) {
       return res.status(404).json({ message: 'Asset not found' });
     }
+
+    const wallet = await Wallet.findOne({ user: userId });
+
+    if (orderType === 'limit' && !price) {
+      return res.status(400).json({ message: 'Limit orders require a price' });
+    }
+
+    if (orderType === 'limit' && price <= 0) {
+      return res.status(400).json({ message: 'Price must be greater than zero' });
+    }
+
+    if (!quantity || quantity <= 0) {
+      return res.status(400).json({ message: 'Quantity must be greater than zero' });
+    }
+
+    if (!Number.isInteger(quantity)) {
+      return res.status(400).json({ message: 'Quantity must be a whole number' });
+    }
+
     if (type === 'sell') {
-      const wallet = await Wallet.findOne({ user: userId });
       const holding = wallet.holdings.find(h => h.asset === assetSymbol);
-      if (!holding || holding.quantity < quantity) {
-        return res.status(400).json({ message: 'Insufficient holdings to place this sell order' });
+      const availableQty = holding ? holding.quantity - (holding.reservedQuantity || 0) : 0;
+
+      if (availableQty < quantity) {
+        return res.status(400).json({ message: 'Insufficient available holdings to place this sell order' });
       }
+
+      holding.reservedQuantity = (holding.reservedQuantity || 0) + quantity;
+      await wallet.save();
+    }
+
+    let reservedAmount = 0;
+    if (type === 'buy') {
+      const reservePrice = orderType === 'limit' ? price : asset.currentPrice;
+      reservedAmount = reservePrice * quantity;
+      const availableCash = wallet.cashBalance - wallet.reservedCash;
+
+      if (availableCash < reservedAmount) {
+        return res.status(400).json({ message: 'Insufficient available funds to place this buy order' });
+      }
+
+      wallet.reservedCash += reservedAmount;
+      await wallet.save();
     }
 
     const order = await Order.create({
@@ -34,6 +70,7 @@ const placeOrder = async (req, res) => {
       quantity,
       remainingQuantity: quantity,
       status: 'pending',
+      reservedAmount,
     });
     await orderQueue.add('processOrder', { orderId: order._id });
 
@@ -42,6 +79,7 @@ const placeOrder = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 const cancelOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -57,6 +95,20 @@ const cancelOrder = async (req, res) => {
     if (!['pending', 'partial'].includes(order.status)) {
       return res.status(400).json({ message: `Cannot cancel an order with status '${order.status}'` });
     }
+
+    const wallet = await Wallet.findOne({ user: order.user });
+
+    if (order.type === 'buy') {
+      wallet.reservedCash = Math.max(0, wallet.reservedCash - order.reservedAmount);
+      order.reservedAmount = 0;
+    } else {
+      const asset = await Asset.findById(order.asset);
+      const holding = wallet.holdings.find(h => h.asset === asset.symbol);
+      if (holding) {
+        holding.reservedQuantity = Math.max(0, (holding.reservedQuantity || 0) - order.remainingQuantity);
+      }
+    }
+    await wallet.save();
 
     order.status = 'cancelled';
     await order.save();
@@ -77,4 +129,3 @@ const getMyOrders = async (req, res) => {
 };
 
 module.exports = { placeOrder, cancelOrder, getMyOrders };
-

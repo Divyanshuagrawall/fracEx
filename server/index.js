@@ -38,7 +38,10 @@ const subClient = pubClient.duplicate();
 io.adapter(createAdapter(pubClient, subClient));
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
-  if (!token) return next(new Error('No token provided'));
+  if (!token) {
+    socket.userId = null;
+    return next();
+  }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.userId = decoded.id;
@@ -49,11 +52,15 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  socket.join(socket.userId); // room name = the user's own ID
-  console.log(`User ${socket.userId} connected via socket`);
+  if (socket.userId) {
+    socket.join(socket.userId);
+    console.log(`User ${socket.userId} connected via socket`);
+  }
 
   socket.on('disconnect', () => {
-    console.log(`User ${socket.userId} disconnected`);
+    if (socket.userId) {
+      console.log(`User ${socket.userId} disconnected`);
+    }
   });
 });
 

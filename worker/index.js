@@ -44,40 +44,78 @@ const worker = new Worker('orders', async(job)=>{
       ...priceFilter,
     }).sort({ price:priceSortDirection, createdAt:1});
 
-    for(const restingOrder of restingOrders) {
-      if (order.remainingQuantity <= 0) break;
-      const tradedQty = Math.min(order.remainingQuantity, restingOrder.remainingQuantity);
-      const executionPrice = restingOrder.price;
-      const buyOrder = order.type === 'buy' ? order : restingOrder;
-      const sellOrder = order.type === 'sell' ? order : restingOrder;
+    for (const restingOrder of restingOrders) {
+    if (order.remainingQuantity <= 0) break;
+
+    let attempts = 0;
+    const maxAttempts = 3;
+    let success = false;
+
+    while (attempts < maxAttempts && !success) {
+      attempts++;
+
+      const freshOrder = await Order.findById(order._id);
+      const freshRestingOrder = await Order.findById(restingOrder._id);
+      const freshAsset = await Asset.findById(order.asset);
+
+      if (!freshOrder || !freshRestingOrder || freshOrder.remainingQuantity <= 0 || freshRestingOrder.remainingQuantity <= 0) {
+        success = true;
+        break;
+      }
+
+      const tradedQty = Math.min(freshOrder.remainingQuantity, freshRestingOrder.remainingQuantity);
+      const executionPrice = freshRestingOrder.price;
+      const buyOrder = freshOrder.type === 'buy' ? freshOrder : freshRestingOrder;
+      const sellOrder = freshOrder.type === 'sell' ? freshOrder : freshRestingOrder;
 
       const session = await mongoose.startSession();
       try {
-        await session.withTransaction(async()=>{
-          order.remainingQuantity -= tradedQty;
-          order.status = order.remainingQuantity === 0 ? 'filled' : 'partial';
-          restingOrder.remainingQuantity -= tradedQty;
-          restingOrder.status = restingOrder.remainingQuantity === 0 ? 'filled' : 'partial';
-          await order.save({ session });
-          await restingOrder.save({ session });
+        await session.withTransaction(async () => {
+          const buyReservePrice = buyOrder.price ?? freshAsset.currentPrice;
 
-          asset.currentPrice = executionPrice;
-          await asset.save({ session });
+          freshOrder.remainingQuantity -= tradedQty;
+          freshOrder.status = freshOrder.remainingQuantity === 0 ? 'filled' : 'partial';
+          freshRestingOrder.remainingQuantity -= tradedQty;
+          freshRestingOrder.status = freshRestingOrder.remainingQuantity === 0 ? 'filled' : 'partial';
+
+          if (freshOrder.type === 'buy') {
+            freshOrder.reservedAmount = Math.max(0, freshOrder.reservedAmount - (buyReservePrice * tradedQty));
+          }
+          if (freshRestingOrder.type === 'buy') {
+            freshRestingOrder.reservedAmount = Math.max(0, freshRestingOrder.reservedAmount - (buyReservePrice * tradedQty));
+          }
+
+          await freshOrder.save({ session });
+          await freshRestingOrder.save({ session });
+
+          freshAsset.currentPrice = executionPrice;
+          await freshAsset.save({ session });
 
           const buyerWallet = await Wallet.findOne({ user: buyOrder.user }).session(session);
           const sellerWallet = await Wallet.findOne({ user: sellOrder.user }).session(session);
+
+          if (!buyerWallet || !sellerWallet) {
+            throw new Error(`Wallet missing — buyer: ${!!buyerWallet}, seller: ${!!sellerWallet}`);
+          }
+
+          const releasedReservation = buyReservePrice * tradedQty;
+          buyerWallet.reservedCash = Math.max(0, buyerWallet.reservedCash - releasedReservation);
+
           buyerWallet.cashBalance -= tradedQty * executionPrice;
-          const buyerHolding = buyerWallet.holdings.find(h => h.asset === asset.symbol);
+          const buyerHolding = buyerWallet.holdings.find(h => h.asset === freshAsset.symbol);
           if (buyerHolding) buyerHolding.quantity += tradedQty;
-          else buyerWallet.holdings.push({ asset: asset.symbol, quantity: tradedQty });
+          else buyerWallet.holdings.push({ asset: freshAsset.symbol, quantity: tradedQty, reservedQuantity: 0 });
 
           sellerWallet.cashBalance += tradedQty * executionPrice;
-          const sellerHolding = sellerWallet.holdings.find(h => h.asset === asset.symbol);
+          const sellerHolding = sellerWallet.holdings.find(h => h.asset === freshAsset.symbol);
           sellerHolding.quantity -= tradedQty;
+          sellerHolding.reservedQuantity = Math.max(0, (sellerHolding.reservedQuantity || 0) - tradedQty);
+
           await buyerWallet.save({ session });
           await sellerWallet.save({ session });
         });
-        console.log(`Matched ${tradedQty} @ ${executionPrice}. Incoming now ${order.status}, resting now ${restingOrder.status}`);
+
+        console.log(`Matched ${tradedQty} @ ${executionPrice}. Incoming now ${freshOrder.status}, resting now ${freshRestingOrder.status}`);
 
         emitter.to(buyOrder.user.toString()).emit('orderFilled', {
           orderId: buyOrder._id,
@@ -93,13 +131,31 @@ const worker = new Worker('orders', async(job)=>{
           side: 'sell',
         });
 
+        emitter.emit('priceUpdate', {
+          assetId: freshAsset._id,
+          symbol: freshAsset.symbol,
+          price: executionPrice,
+        });
+
+        order.remainingQuantity = freshOrder.remainingQuantity;
+        success = true;
+
       } catch (error) {
-        console.error('Transaction failed:', error.message);
-        break;
+        if (error.name === 'VersionError') {
+          console.warn(`Version conflict on attempt ${attempts}, retrying...`);
+        } else {
+          console.error('Transaction failed:', error.message);
+          break;
+        }
       } finally {
         await session.endSession();
       }
     }
+
+    if (!success) {
+      console.error(`Failed to match order ${order._id} against ${restingOrder._id} after ${maxAttempts} attempts`);
+    }
+  }
     
 
 
