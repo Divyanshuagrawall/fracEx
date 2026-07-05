@@ -24,9 +24,17 @@ const emitter = new Emitter(emitterRedisClient);
 
 const worker = new Worker('orders', async(job)=>{
     const { orderId } = job.data;
+    console.log('=== JOB START, orderId:', orderId);
     const order = await Order.findById(orderId);
-    if (!order || order.remainingQuantity <= 0) return;
-    console.log('Fetched order:', order);
+    if (!order) {
+      console.log('=== ORDER NOT FOUND for orderId:', orderId);
+      return;
+    }
+    if (order.remainingQuantity <= 0) {
+      console.log('=== ORDER ALREADY FILLED, skipping. remainingQuantity:', order.remainingQuantity);
+      return;
+    }
+    console.log('=== ORDER FETCHED:', order._id, order.type, order.price, order.asset.toString());
 
     const asset = await Asset.findById(order.asset)
     const oppositeType = order.type === 'buy' ? 'sell' : 'buy';
@@ -46,6 +54,8 @@ const worker = new Worker('orders', async(job)=>{
       user: { $ne: order.user },
       ...priceFilter,
     }).sort({ price:priceSortDirection, createdAt:1});
+
+    console.log(`=== FOUND ${restingOrders.length} RESTING ORDERS for asset ${order.asset}`);
 
     for (const restingOrder of restingOrders) {
     if (order.remainingQuantity <= 0) break;
