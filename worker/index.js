@@ -7,6 +7,11 @@ const Wallet = require('./models/Wallet');
 const { Emitter } = require('@socket.io/redis-emitter');
 const Redis = require('ioredis');
 
+const express = require('express');
+const app = express();
+app.get('/health', (req, res) => res.json({ status: 'worker running' }));
+app.listen(process.env.PORT || 10000, () => console.log('Worker health check listening'));
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('Worker: MongoDB connected'))
   .catch((err) => console.error('Worker: MongoDB connection error:', err.message));
