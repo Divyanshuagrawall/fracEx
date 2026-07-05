@@ -11,12 +11,10 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('Worker: MongoDB connected'))
   .catch((err) => console.error('Worker: MongoDB connection error:', err.message));
 
-const connection = {
-    host:process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-};
-
-const emitterRedisClient = new Redis({ host: process.env.REDIS_HOST, port: process.env.REDIS_PORT });
+const connection = new Redis(process.env.REDIS_URL, {
+  maxRetriesPerRequest: null,
+});
+const emitterRedisClient = new Redis(process.env.REDIS_URL);
 const emitter = new Emitter(emitterRedisClient);
 
 const worker = new Worker('orders', async(job)=>{

@@ -33,7 +33,7 @@ const io = new Server(httpServer, {
   cors: { origin: '*' }, // tighten this later once the client exists
 });
 
-const pubClient = new Redis({ host: process.env.REDIS_HOST, port: process.env.REDIS_PORT });
+const pubClient = new Redis(process.env.REDIS_URL);
 const subClient = pubClient.duplicate();
 io.adapter(createAdapter(pubClient, subClient));
 io.use((socket, next) => {
