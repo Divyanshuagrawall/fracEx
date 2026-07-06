@@ -40,10 +40,11 @@ const worker = new Worker('orders', async(job)=>{
     const oppositeType = order.type === 'buy' ? 'sell' : 'buy';
 
     const priceFilter = {};
-    if(order.orderType === 'limit'){
-      priceFilter.price = order.type === 'buy'
-      ? {$lte : order.price}
-      : {$gte : order.price};
+    if (order.orderType === 'limit') {
+      priceFilter.$or = [
+        { orderType: 'market' },
+        { price: order.type === 'buy' ? { $lte: order.price } : { $gte: order.price } }
+      ];
     }
 
     const priceSortDirection = order.type === 'buy' ? 1 : -1;
