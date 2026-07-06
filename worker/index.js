@@ -78,7 +78,9 @@ const worker = new Worker('orders', async(job)=>{
       }
 
       const tradedQty = Math.min(freshOrder.remainingQuantity, freshRestingOrder.remainingQuantity);
-      const executionPrice = freshRestingOrder.price;
+      const executionPrice = freshRestingOrder.orderType === 'market'
+      ? (freshOrder.price ?? freshAsset.currentPrice)
+      : freshRestingOrder.price;
       const buyOrder = freshOrder.type === 'buy' ? freshOrder : freshRestingOrder;
       const sellOrder = freshOrder.type === 'sell' ? freshOrder : freshRestingOrder;
 
