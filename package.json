@@ -1,0 +1,24 @@
+{
+  "name": "fracex",
+  "version": "1.0.0",
+  "description": "A full-stack trading platform simulating fractional equity trading with a real matching engine, live price feeds, and transactional fund/share settlement — built to model the core mechanics of a real brokerage backend (order books, reservations, partial fills, and race-condition-safe settlement).",
+  "main": "loadtest.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Divyanshuagrawall/fracEx.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Divyanshuagrawall/fracEx/issues"
+  },
+  "homepage": "https://github.com/Divyanshuagrawall/fracEx#readme",
+  "devDependencies": {
+    "autocannon": "^8.0.0"
+  }
+}
