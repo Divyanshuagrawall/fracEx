@@ -34,3 +34,6 @@ worker/.env
 
 # Test client
 test-client/node_modules/
+# Rate limiter testing scratch files
+login.json
+order.json
